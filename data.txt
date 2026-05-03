@@ -1,0 +1,728 @@
+# ================================
+# INSTALL — Google Colab mein
+# ================================
+# !pip install ortools
+
+import heapq
+import math
+from ortools.sat.python import cp_model
+
+# ================================
+# SIMPLE PROBLEMS (Nurse/Shift/Room)
+# ================================
+model = cp_model.CpModel()
+
+# Variables — naam aur domain badlo
+x = model.new_int_var(0, 2, "x")  # ← min, max, naam
+y = model.new_int_var(0, 2, "y")
+z = model.new_int_var(0, 2, "z")
+
+# Constraints — rules lagao
+model.add_all_different([x, y, z])
+model.add(x != 2)   # ← condition badlo
+model.add(y >= 1)   # ← condition badlo
+
+# Solve
+solver = cp_model.CpSolver()
+printer = cp_model.VarArraySolutionPrinter([x, y, z])
+solver.parameters.enumerate_all_solutions = True
+solver.Solve(model, printer)
+
+# ================================
+# GRID PROBLEMS (Robot Path)
+# ================================
+grid = [
+    [1, 1, 1, 1, 1],
+    [1, 1, 0, 1, 1],  # 0=obstacle
+    [1, 1, 1, 1, 1],
+    [1, 0, 1, 1, 1],
+    [1, 1, 1, 1, 1]
+]
+
+start = (1, 1)  # ← badlo
+goal  = (4, 4)  # ← badlo
+
+directions = [(-1,-1),(-1,1),(1,-1),(1,1)]
+cost = math.sqrt(2)
+pq = [(0, start)]
+visited = set()
+parent = {start: None}
+
+while pq:
+    curr_cost, (cx,cy) = heapq.heappop(pq)
+    if (cx,cy) in visited: continue
+    visited.add((cx,cy))
+    if (cx,cy) == goal: break
+    for dx,dy in directions:
+        nx,ny = cx+dx, cy+dy
+        if (0<=nx<len(grid) and
+            0<=ny<len(grid[0]) and
+            grid[nx][ny]==1 and
+            (nx,ny) not in visited):
+            heapq.heappush(pq,
+                (curr_cost+cost,(nx,ny)))
+            parent[(nx,ny)] = (cx,cy)
+
+path = []
+node = goal
+while node:
+    path.append(node)
+    node = parent[node]
+print("Path:", path[::-1])
+
+# ================================
+# ISLAND PERIMETER
+# ================================
+island = [
+    [0, 1, 0, 0],
+    [1, 1, 1, 0],  # ← badlo
+    [0, 1, 0, 0],
+]
+
+perimeter = 0
+rows = len(island)
+cols = len(island[0])
+
+for i in range(rows):
+    for j in range(cols):
+        if island[i][j] == 1:
+            for dx,dy in [(-1,0),(1,0),(0,-1),(0,1)]:
+                ni,nj = i+dx, j+dy
+                if (ni<0 or ni>=rows or
+                    nj<0 or nj>=cols or
+                    island[ni][nj]==0):
+                    perimeter += 1
+
+print("Perimeter:", perimeter)
+
+# ================================
+# TSP
+# ================================
+import random
+n = 10  # ← cities badlo
+random.seed(42)
+distance = [[0]*n for _ in range(n)]
+for i in range(n):
+    for j in range(n):
+        if i != j:
+            distance[i][j] = random.randint(10,100)
+
+model2 = cp_model.CpModel()
+cities = [model2.new_int_var(0, n-1, f"c{i}")
+          for i in range(n)]
+model2.add_all_different(cities)
+
+total = []
+for i in range(n):
+    for j in range(n):
+        if i != j:
+            b = model2.new_bool_var(f"b{i}{j}")
+            model2.add(
+                cities[i]+1==cities[j]
+            ).only_enforce_if(b)
+            total.append(distance[i][j]*b)
+
+model2.minimize(sum(total))
+solver2 = cp_model.CpSolver()
+status = solver2.Solve(model2)
+
+if status in [cp_model.OPTIMAL,
+              cp_model.FEASIBLE]:
+    order = sorted(range(n),
+        key=lambda x: solver2.Value(cities[x]))
+    print("City Order:", order)
+    
+    
+    
+    Master Template — MinMax + Alpha Beta! 🎯
+    
+    import math
+
+# ================================
+# MINIMAX
+# ================================
+def minimax(state, depth, isMax):
+    # Base case
+    if depth == 0 or game_over(state):
+        return evaluate(state)
+
+    if isMax:
+        best = -math.inf
+        for move in get_moves(state):
+            new_state = make_move(state, move)
+            best = max(best, minimax(
+                new_state, depth-1, False))
+        return best
+    else:
+        best = math.inf
+        for move in get_moves(state):
+            new_state = make_move(state, move)
+            best = min(best, minimax(
+                new_state, depth-1, True))
+        return best
+
+# ================================
+# ALPHA BETA — MINIMAX + PRUNE
+# ================================
+def alphabeta(state, depth, alpha, beta, isMax):
+    # Base case
+    if depth == 0 or game_over(state):
+        return evaluate(state)
+
+    if isMax:
+        best = -math.inf
+        for move in get_moves(state):
+            new_state = make_move(state, move)
+            best = max(best, alphabeta(
+                new_state, depth-1,
+                alpha, beta, False))
+            alpha = max(alpha, best)
+            if beta <= alpha:
+                break  # PRUNE!
+        return best
+    else:
+        best = math.inf
+        for move in get_moves(state):
+            new_state = make_move(state, move)
+            best = min(best, alphabeta(
+                new_state, depth-1,
+                alpha, beta, True))
+            beta = min(beta, best)
+            if beta <= alpha:
+                break  # PRUNE!
+        return best
+
+# ================================
+# BEST MOVE — DONO KE LIYE SAME
+# ================================
+def get_best_move(state, depth=3):
+    best_move  = None
+    best_score = -math.inf
+
+    for move in get_moves(state):
+        new_state = make_move(state, move)
+
+        # MinMax use karna ho toh:
+        # score = minimax(new_state, depth-1, False)
+
+        # Alpha Beta use karna ho toh:
+        score = alphabeta(new_state, depth-1,
+                         -math.inf, math.inf, False)
+
+        if score > best_score:
+            best_score = score
+            best_move  = move
+
+    return best_move
+    
+    ✅ COIN GAME Pe Apply:
+    
+    import math
+
+coins = [3, 9, 1, 2, 7, 5]  # ← badlo
+
+# MinMax
+def minimax(coins, left, right, isMax):
+    if left > right: return 0
+    if isMax:
+        return max(
+            coins[left]  + minimax(coins, left+1, right, False),
+            coins[right] + minimax(coins, left, right-1, False)
+        )
+    else:
+        return min(
+            minimax(coins, left+1, right, True),
+            minimax(coins, left, right-1, True)
+        )
+
+# Alpha Beta
+def alphabeta(coins, left, right,
+              isMax, alpha, beta):
+    if left > right: return 0
+    if isMax:
+        best = max(
+            coins[left]  + alphabeta(coins, left+1,
+                right, False, alpha, beta),
+            coins[right] + alphabeta(coins, left,
+                right-1, False, alpha, beta)
+        )
+        alpha = max(alpha, best)
+        if beta <= alpha: return best
+        return best
+    else:
+        best = min(
+            alphabeta(coins, left+1, right,
+                     True, alpha, beta),
+            alphabeta(coins, left, right-1,
+                     True, alpha, beta)
+        )
+        beta = min(beta, best)
+        if beta <= alpha: return best
+        return best
+
+# Game Play
+def play_game(coins):
+    coins = list(coins)
+    left = 0
+    right = len(coins)-1
+    max_score = 0
+    min_score = 0
+    turn = "Max"
+
+    print("Initial Coins:", coins)
+
+    while left <= right:
+        if turn == "Max":
+            lv = alphabeta(coins, left+1, right,
+                          False, -math.inf, math.inf)
+            rv = alphabeta(coins, left, right-1,
+                          False, -math.inf, math.inf)
+            if coins[left]+lv >= coins[right]+rv:
+                print(f"Max picks {coins[left]},"
+                      f" Remaining: {coins[left+1:right+1]}")
+                max_score += coins[left]
+                left += 1
+            else:
+                print(f"Max picks {coins[right]},"
+                      f" Remaining: {coins[left:right]}")
+                max_score += coins[right]
+                right -= 1
+            turn = "Min"
+        else:
+            if coins[left] <= coins[right]:
+                print(f"Min picks {coins[left]},"
+                      f" Remaining: {coins[left+1:right+1]}")
+                min_score += coins[left]
+                left += 1
+            else:
+                print(f"Min picks {coins[right]},"
+                      f" Remaining: {coins[left:right]}")
+                min_score += coins[right]
+                right -= 1
+            turn = "Max"
+
+    print(f"\nFinal - Max:{max_score}, Min:{min_score}")
+    print("Winner:", "Max" if max_score > min_score
+                           else "Min")
+
+play_game(coins)
+
+
+Bayesian Network + HMM — Master Template! 🎯
+
+# ================================
+# INSTALL — Google Colab mein
+# ================================
+# !pip install pgmpy hmmlearn
+
+# ================================
+# IMPORTS
+# ================================
+from pgmpy.models import DiscreteBayesianNetwork
+from pgmpy.factors.discrete import TabularCPD
+from pgmpy.inference import VariableElimination
+import numpy as np
+from hmmlearn import hmm
+
+# ================================
+# BAYESIAN NETWORK TEMPLATE
+# ================================
+
+# STEP 1 - STRUCTURE
+# A causes B = ('A', 'B')
+model = DiscreteBayesianNetwork([
+    ('Disease', 'Fever'),    # ← badlo
+    ('Disease', 'Cough'),    # ← badlo
+    ('Disease', 'Fatigue'),  # ← badlo
+    ('Disease', 'Chills')    # ← badlo
+])
+
+# STEP 2 - ROOT NODE
+# Koi parent nahi
+cpd_disease = TabularCPD(
+    variable='Disease',
+    variable_card=2,
+    values=[[0.3],   # Flu
+            [0.7]]   # Cold
+)
+
+# STEP 3 - CHILD NODES
+# 1 Parent wala
+cpd_fever = TabularCPD(
+    variable='Fever',
+    variable_card=2,
+    values=[
+        [0.1, 0.5],   # No
+        [0.9, 0.5]    # Yes
+    ],
+    evidence=['Disease'],
+    evidence_card=[2]
+)
+
+cpd_cough = TabularCPD(
+    variable='Cough',
+    variable_card=2,
+    values=[
+        [0.2, 0.4],   # No
+        [0.8, 0.6]    # Yes
+    ],
+    evidence=['Disease'],
+    evidence_card=[2]
+)
+
+cpd_fatigue = TabularCPD(
+    variable='Fatigue',
+    variable_card=2,
+    values=[
+        [0.3, 0.7],   # No
+        [0.7, 0.3]    # Yes
+    ],
+    evidence=['Disease'],
+    evidence_card=[2]
+)
+
+cpd_chills = TabularCPD(
+    variable='Chills',
+    variable_card=2,
+    values=[
+        [0.4, 0.6],   # No
+        [0.6, 0.4]    # Yes
+    ],
+    evidence=['Disease'],
+    evidence_card=[2]
+)
+
+# STEP 4 - ADD
+model.add_cpds(
+    cpd_disease,
+    cpd_fever,
+    cpd_cough,
+    cpd_fatigue,
+    cpd_chills
+)
+
+# STEP 5 - QUERY
+infer = VariableElimination(model)
+
+# Query 1 - Fever+Cough given
+print("=== Query 1 ===")
+r1 = infer.query(
+    variables=['Disease'],
+    evidence={'Fever': 1, 'Cough': 1}
+)
+print(r1)
+
+
+# ================================
+# HMM TEMPLATE
+# ================================
+data = np.array([[1],[2],[1],[3],[2],[1],[3]])
+
+model_hmm = hmm.GaussianHMM(
+    n_components=2,
+    covariance_type='full',
+    n_iter=100
+)
+
+model_hmm.fit(data)
+states = model_hmm.predict(data)
+score  = model_hmm.score(data)
+
+print("Hidden States:", states)
+print("Score:", score)
+
+
+# Query 2 - Fever+Cough+Chills given
+print("=== Query 2 ===")
+r2 = infer.query(
+    variables=['Disease'],
+    evidence={'Fever': 1, 'Cough': 1, 'Chills': 1}
+)
+print(r2)
+
+# Query 3 - Fatigue given Disease=Flu
+print("=== Query 3 ===")
+r3 = infer.query(
+    variables=['Fatigue'],
+    evidence={'Disease': 0}  # 0=Flu
+)
+print(r3)
+
+
+
+EDA — Template + Short Tricks! 🎯
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ================================
+# STEP 1 - LOAD
+# ================================
+df = pd.read_csv('data.csv')
+
+# ================================
+# STEP 2 - SAMJHO
+# ================================
+df.head()           # pehli 5 rows
+df.shape            # rows x columns
+df.info()           # data types
+df.describe()       # stats
+
+# ================================
+# STEP 3 - CLEAN
+# ================================
+df.isnull().sum()           # missing check
+df.fillna(df.mean())        # fill karo
+df.drop_duplicates()        # duplicates hatao
+
+# ================================
+# STEP 4 - STATS
+# ================================
+df.mean()
+df.median()
+df.std()
+df.skew()           # skewness
+
+# ================================
+# STEP 5 - GRAPHS
+# ================================
+# Distribution
+sns.histplot(df['column'])
+plt.show()
+
+# Outliers
+sns.boxplot(df['column'])
+plt.show()
+
+# Categorical
+sns.countplot(x='column', data=df)
+plt.show()
+
+# Correlation
+sns.heatmap(df.corr(), annot=True, cmap='coolwarm')
+plt.show()
+
+# Pairplot
+sns.pairplot(df)
+plt.show()
+
+# ================================
+# STEP 6 - OUTLIERS
+# ================================
+Q1  = df['column'].quantile(0.25)
+Q3  = df['column'].quantile(0.75)
+IQR = Q3 - Q1
+df  = df[(df['column'] >= Q1 - 1.5*IQR) &
+         (df['column'] <= Q3 + 1.5*IQR)]
+
+# ================================
+# STEP 7 - CLASS BALANCE
+# ================================
+df['target'].value_counts()
+df['target'].value_counts().plot(kind='bar')
+plt.show()
+
+# ================================
+# STEP 8 - CONCLUSION
+# ================================
+# 1. Dataset mein X missing values thi
+# 2. Y feature mein outliers hain
+# 3. A aur B highly correlated hain
+# 4. Dataset balanced/imbalanced hai
+# 5. Z feature important hai
+
+
+# Cell 1 - Install karo pehle
+!pip install pandas numpy matplotlib seaborn
+
+
+
+
+
+Supervised Learning — Master Template! 🎯
+
+# ================================
+# INSTALL — Colab mein
+# ================================
+# !pip install scikit-learn pandas seaborn
+
+# ================================
+# IMPORTS
+# ================================
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+# ================================
+# STEP 1 - DATA
+# 2 tarike se data lo
+# ================================
+
+# Tarika 1 - CSV file hai toh:
+df = pd.read_csv('file.csv')  # ← naam badlo
+
+# Tarika 2 - CSV nahi hai toh:
+data = {
+    'Age':    [25,30,35,28,40],
+    'Gender': ['M','F','M','F','M'],
+    'Target': [1,0,1,0,1]
+}
+df = pd.DataFrame(data)
+
+# ================================
+# STEP 2 - SAMJHO
+# ================================
+print(df.head())
+print(df.shape)
+print(df.info())
+print(df.describe())
+
+# ================================
+# STEP 3 - CLEAN
+# ================================
+print(df.isnull().sum())
+df = df.fillna(df.mean(numeric_only=True))
+df = df.drop_duplicates()
+
+# ================================
+# STEP 4 - ENCODE
+# Text columns encode karo
+# ================================
+le = LabelEncoder()
+df['Gender']  = le.fit_transform(df['Gender'])  # ← badlo
+df['Smoking'] = le.fit_transform(df['Smoking']) # ← badlo
+df['Target']  = le.fit_transform(df['Target'])  # ← badlo
+
+# ================================
+# STEP 5 - SPLIT
+# ================================
+X = df.drop('Target', axis=1)  # ← target badlo
+y = df['Target']               # ← target badlo
+
+X_train,X_test,y_train,y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42)
+
+# ================================
+# STEP 6 - TRAIN
+# ================================
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+
+# ================================
+# STEP 7 - EVALUATE
+# ================================
+y_pred = model.predict(X_test)
+print("\nAccuracy:", accuracy_score(y_test, y_pred))
+print("\nMatrix:\n", confusion_matrix(y_test, y_pred))
+
+# ================================
+# STEP 8 - GRAPHS
+# ================================
+# Confusion Matrix Plot
+sns.heatmap(confusion_matrix(y_test, y_pred),
+            annot=True, fmt='d', cmap='Blues')
+plt.title("Confusion Matrix")
+plt.show()
+
+# Feature Importance
+feat = pd.Series(
+    model.feature_importances_,
+    index=X.columns
+)
+feat.plot(kind='bar')
+plt.title("Feature Importance")
+plt.show()
+
+
+
+Unsupervised — FULL MARKS Template! 🎯
+
+# ================================
+# INSTALL
+# ================================
+# !pip install scikit-learn pandas matplotlib seaborn
+
+# ================================
+# IMPORTS
+# ================================
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+# ================================
+# STEP 1 - LOAD
+# ← Sirf file naam badlo!
+# ================================
+df = pd.read_csv('data.csv')  # ← NAAM BADLO
+
+# ================================
+# STEP 2 - COLUMNS DEKHO
+# ← Yahan se columns pata karo
+# ================================
+print(df.head())
+print(df.columns)
+
+# ================================
+# STEP 3 - CLEAN
+# ================================
+df = df.fillna(df.mean(numeric_only=True))
+df = df.drop_duplicates()
+
+# Text column hai toh:
+# le = LabelEncoder()
+# df['col'] = le.fit_transform(df['col'])
+
+# ================================
+# STEP 4 - FEATURES
+# ← Columns dekh ke badlo!
+# ================================
+X = df[['col1', 'col2']]  # ← COLUMNS BADLO
+
+# S - SCALE
+X_scaled = StandardScaler().fit_transform(X)
+
+# ================================
+# STEP 5 - ELBOW
+# ================================
+wcss = []
+for i in range(1, 11):
+    km = KMeans(n_clusters=i, random_state=42)
+    km.fit(X_scaled)
+    wcss.append(km.inertia_)
+
+plt.plot(range(1,11), wcss, marker='o')
+plt.title('Elbow Method')
+plt.xlabel('K')
+plt.ylabel('WCSS')
+plt.show()
+
+# ================================
+# STEP 6 - KMEANS
+# ← Elbow se K badlo!
+# ================================
+km = KMeans(n_clusters=3,  # ← K BADLO
+            random_state=42)
+y_pred = km.fit_predict(X_scaled)
+
+# ================================
+# STEP 7 - RESULT
+# ================================
+df['Cluster'] = y_pred
+print(df.head())
+print(df['Cluster'].value_counts())
+
+# ================================
+# STEP 8 - PLOT
+# ================================
+plt.scatter(X_scaled[:,0], X_scaled[:,1],
+            c=y_pred, cmap='viridis')
+plt.title('Clusters')
+plt.show()
